@@ -1,10 +1,13 @@
-FATE_CHECKASM = fate-checkasm-alacdsp                                   \
+FATE_CHECKASM = fate-checkasm-aacpsdsp                                  \
+                fate-checkasm-alacdsp                                   \
                 fate-checkasm-audiodsp                                  \
                 fate-checkasm-blockdsp                                  \
                 fate-checkasm-bswapdsp                                  \
                 fate-checkasm-fixed_dsp                                 \
                 fate-checkasm-flacdsp                                   \
+                fate-checkasm-float_dsp                                 \
                 fate-checkasm-fmtconvert                                \
+                fate-checkasm-g722dsp                                   \
                 fate-checkasm-h264dsp                                   \
                 fate-checkasm-h264pred                                  \
                 fate-checkasm-h264qpel                                  \
@@ -13,6 +16,7 @@ FATE_CHECKASM = fate-checkasm-alacdsp                                   \
                 fate-checkasm-jpeg2000dsp                               \
                 fate-checkasm-llviddsp                                  \
                 fate-checkasm-pixblockdsp                               \
+                fate-checkasm-sbrdsp                                    \
                 fate-checkasm-synth_filter                              \
                 fate-checkasm-v210enc                                   \
                 fate-checkasm-vf_blend                                  \

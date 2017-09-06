@@ -121,6 +121,7 @@ static void register_all(void)
     REGISTER_MUXDEMUX(FFMETADATA,       ffmetadata);
     REGISTER_MUXER   (FIFO,             fifo);
     REGISTER_MUXDEMUX(FILMSTRIP,        filmstrip);
+    REGISTER_MUXDEMUX(FITS,             fits);
     REGISTER_MUXDEMUX(FLAC,             flac);
     REGISTER_DEMUXER (FLIC,             flic);
     REGISTER_MUXDEMUX(FLV,              flv);
@@ -133,7 +134,10 @@ static void register_all(void)
     REGISTER_DEMUXER (FSB,              fsb);
     REGISTER_MUXDEMUX(G722,             g722);
     REGISTER_MUXDEMUX(G723_1,           g723_1);
+    REGISTER_MUXDEMUX(G726,             g726);
+    REGISTER_MUXDEMUX(G726LE,           g726le);
     REGISTER_DEMUXER (G729,             g729);
+    REGISTER_DEMUXER (GDV,              gdv);
     REGISTER_DEMUXER (GENH,             genh);
     REGISTER_MUXDEMUX(GIF,              gif);
     REGISTER_MUXDEMUX(GSM,              gsm);
@@ -266,6 +270,7 @@ static void register_all(void)
     REGISTER_MUXDEMUX(RTP,              rtp);
     REGISTER_MUXER   (RTP_MPEGTS,       rtp_mpegts);
     REGISTER_MUXDEMUX(RTSP,             rtsp);
+    REGISTER_DEMUXER (S337M,            s337m);
     REGISTER_DEMUXER (SAMI,             sami);
     REGISTER_MUXDEMUX(SAP,              sap);
     REGISTER_DEMUXER (SBG,              sbg);
@@ -379,13 +384,12 @@ static void register_all(void)
     REGISTER_MUXER   (CHROMAPRINT,      chromaprint);
     REGISTER_DEMUXER (LIBGME,           libgme);
     REGISTER_DEMUXER (LIBMODPLUG,       libmodplug);
-    REGISTER_MUXDEMUX(LIBNUT,           libnut);
     REGISTER_DEMUXER (LIBOPENMPT,       libopenmpt);
 }
 
 void av_register_all(void)
 {
-    AVOnce control = AV_ONCE_INIT;
+    static AVOnce control = AV_ONCE_INIT;
 
     ff_thread_once(&control, register_all);
 }
