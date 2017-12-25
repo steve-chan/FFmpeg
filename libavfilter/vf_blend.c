@@ -25,7 +25,7 @@
 #include "avfilter.h"
 #include "bufferqueue.h"
 #include "formats.h"
-#include "framesync2.h"
+#include "framesync.h"
 #include "internal.h"
 #include "video.h"
 #include "blend.h"
@@ -411,7 +411,7 @@ static int blend_frame_for_dualinput(FFFrameSync *fs)
     AVFrame *top_buf, *bottom_buf, *dst_buf;
     int ret;
 
-    ret = ff_framesync2_dualinput_get(fs, &top_buf, &bottom_buf);
+    ret = ff_framesync_dualinput_get(fs, &top_buf, &bottom_buf);
     if (ret < 0)
         return ret;
     if (!bottom_buf)
@@ -454,7 +454,7 @@ static av_cold void uninit(AVFilterContext *ctx)
     BlendContext *s = ctx->priv;
     int i;
 
-    ff_framesync2_uninit(&s->fs);
+    ff_framesync_uninit(&s->fs);
     av_frame_free(&s->prev_frame);
 
     for (i = 0; i < FF_ARRAY_ELEMS(s->params); i++)
@@ -524,19 +524,12 @@ static int config_output(AVFilterLink *outlink)
             av_log(ctx, AV_LOG_ERROR, "inputs must be of same pixel format\n");
             return AVERROR(EINVAL);
         }
-        if (toplink->w                       != bottomlink->w ||
-            toplink->h                       != bottomlink->h ||
-            toplink->sample_aspect_ratio.num != bottomlink->sample_aspect_ratio.num ||
-            toplink->sample_aspect_ratio.den != bottomlink->sample_aspect_ratio.den) {
+        if (toplink->w != bottomlink->w || toplink->h != bottomlink->h) {
             av_log(ctx, AV_LOG_ERROR, "First input link %s parameters "
-                   "(size %dx%d, SAR %d:%d) do not match the corresponding "
-                   "second input link %s parameters (%dx%d, SAR %d:%d)\n",
+                   "(size %dx%d) do not match the corresponding "
+                   "second input link %s parameters (size %dx%d)\n",
                    ctx->input_pads[TOP].name, toplink->w, toplink->h,
-                   toplink->sample_aspect_ratio.num,
-                   toplink->sample_aspect_ratio.den,
-                   ctx->input_pads[BOTTOM].name, bottomlink->w, bottomlink->h,
-                   bottomlink->sample_aspect_ratio.num,
-                   bottomlink->sample_aspect_ratio.den);
+                   ctx->input_pads[BOTTOM].name, bottomlink->w, bottomlink->h);
             return AVERROR(EINVAL);
         }
     }
@@ -554,7 +547,7 @@ static int config_output(AVFilterLink *outlink)
     s->nb_planes = av_pix_fmt_count_planes(toplink->format);
 
     if (!s->tblend)
-        if ((ret = ff_framesync2_init_dualinput(&s->fs, ctx)) < 0)
+        if ((ret = ff_framesync_init_dualinput(&s->fs, ctx)) < 0)
             return ret;
 
     for (plane = 0; plane < FF_ARRAY_ELEMS(s->params); plane++) {
@@ -581,7 +574,7 @@ static int config_output(AVFilterLink *outlink)
         }
     }
 
-    return s->tblend ? 0 : ff_framesync2_configure(&s->fs);
+    return s->tblend ? 0 : ff_framesync_configure(&s->fs);
 }
 
 #if CONFIG_BLEND_FILTER
@@ -589,7 +582,7 @@ static int config_output(AVFilterLink *outlink)
 static int activate(AVFilterContext *ctx)
 {
     BlendContext *s = ctx->priv;
-    return ff_framesync2_activate(&s->fs);
+    return ff_framesync_activate(&s->fs);
 }
 
 static const AVFilterPad blend_inputs[] = {

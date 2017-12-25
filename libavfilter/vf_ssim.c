@@ -40,7 +40,7 @@
 #include "avfilter.h"
 #include "drawutils.h"
 #include "formats.h"
-#include "framesync2.h"
+#include "framesync.h"
 #include "internal.h"
 #include "ssim.h"
 #include "video.h"
@@ -286,22 +286,22 @@ static int do_ssim(FFFrameSync *fs)
 {
     AVFilterContext *ctx = fs->parent;
     SSIMContext *s = ctx->priv;
-    AVFrame *main, *ref;
+    AVFrame *master, *ref;
     AVDictionary **metadata;
     float c[4], ssimv = 0.0;
     int ret, i;
 
-    ret = ff_framesync2_dualinput_get(fs, &main, &ref);
+    ret = ff_framesync_dualinput_get(fs, &master, &ref);
     if (ret < 0)
         return ret;
     if (!ref)
-        return ff_filter_frame(ctx->outputs[0], main);
-    metadata = &main->metadata;
+        return ff_filter_frame(ctx->outputs[0], master);
+    metadata = &master->metadata;
 
     s->nb_frames++;
 
     for (i = 0; i < s->nb_components; i++) {
-        c[i] = s->ssim_plane(&s->dsp, main->data[i], main->linesize[i],
+        c[i] = s->ssim_plane(&s->dsp, master->data[i], master->linesize[i],
                              ref->data[i], ref->linesize[i],
                              s->planewidth[i], s->planeheight[i], s->temp,
                              s->max);
@@ -328,7 +328,7 @@ static int do_ssim(FFFrameSync *fs)
         fprintf(s->stats_file, "All:%f (%f)\n", ssimv, ssim_db(ssimv, 1.0));
     }
 
-    return ff_filter_frame(ctx->outputs[0], main);
+    return ff_filter_frame(ctx->outputs[0], master);
 }
 
 static av_cold int init(AVFilterContext *ctx)
@@ -431,7 +431,7 @@ static int config_output(AVFilterLink *outlink)
     AVFilterLink *mainlink = ctx->inputs[0];
     int ret;
 
-    ret = ff_framesync2_init_dualinput(&s->fs, ctx);
+    ret = ff_framesync_init_dualinput(&s->fs, ctx);
     if (ret < 0)
         return ret;
     outlink->w = mainlink->w;
@@ -440,7 +440,7 @@ static int config_output(AVFilterLink *outlink)
     outlink->sample_aspect_ratio = mainlink->sample_aspect_ratio;
     outlink->frame_rate = mainlink->frame_rate;
 
-    if ((ret = ff_framesync2_configure(&s->fs)) < 0)
+    if ((ret = ff_framesync_configure(&s->fs)) < 0)
         return ret;
 
     return 0;
@@ -449,7 +449,7 @@ static int config_output(AVFilterLink *outlink)
 static int activate(AVFilterContext *ctx)
 {
     SSIMContext *s = ctx->priv;
-    return ff_framesync2_activate(&s->fs);
+    return ff_framesync_activate(&s->fs);
 }
 
 static av_cold void uninit(AVFilterContext *ctx)
@@ -469,7 +469,7 @@ static av_cold void uninit(AVFilterContext *ctx)
                s->ssim_total / s->nb_frames, ssim_db(s->ssim_total, s->nb_frames));
     }
 
-    ff_framesync2_uninit(&s->fs);
+    ff_framesync_uninit(&s->fs);
 
     if (s->stats_file && s->stats_file != stdout)
         fclose(s->stats_file);

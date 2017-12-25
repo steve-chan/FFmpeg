@@ -19,9 +19,16 @@
 #ifndef AVCODEC_NVENC_H
 #define AVCODEC_NVENC_H
 
-#include "compat/nvenc/nvEncodeAPI.h"
-
 #include "config.h"
+
+#if CONFIG_D3D11VA
+#define COBJMACROS
+#include "libavutil/hwcontext_d3d11va.h"
+#else
+typedef void ID3D11Device;
+#endif
+
+#include "compat/nvenc/nvEncodeAPI.h"
 
 #include "compat/cuda/dynlink_loader.h"
 #include "libavutil/fifo.h"
@@ -107,6 +114,7 @@ typedef struct NvencContext
     NV_ENC_CONFIG encode_config;
     CUcontext cu_context;
     CUcontext cu_context_internal;
+    ID3D11Device *d3d11_device;
 
     int nb_surfaces;
     NvencSurface *surfaces;
@@ -116,8 +124,11 @@ typedef struct NvencContext
     AVFifoBuffer *output_surface_ready_queue;
     AVFifoBuffer *timestamp_list;
 
+    int encoder_flushing;
+
     struct {
-        CUdeviceptr ptr;
+        void *ptr;
+        int ptr_index;
         NV_ENC_REGISTERED_PTR regptr;
         int mapped;
     } registered_frames[MAX_REGISTERED_FRAMES];
@@ -168,6 +179,10 @@ typedef struct NvencContext
 int ff_nvenc_encode_init(AVCodecContext *avctx);
 
 int ff_nvenc_encode_close(AVCodecContext *avctx);
+
+int ff_nvenc_send_frame(AVCodecContext *avctx, const AVFrame *frame);
+
+int ff_nvenc_receive_packet(AVCodecContext *avctx, AVPacket *pkt);
 
 int ff_nvenc_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                           const AVFrame *frame, int *got_packet);

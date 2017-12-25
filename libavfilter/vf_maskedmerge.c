@@ -71,9 +71,9 @@ static int process_frame(FFFrameSync *fs)
     AVFrame *out, *base, *overlay, *mask;
     int ret;
 
-    if ((ret = ff_framesync2_get_frame(&s->fs, 0, &base,    0)) < 0 ||
-        (ret = ff_framesync2_get_frame(&s->fs, 1, &overlay, 0)) < 0 ||
-        (ret = ff_framesync2_get_frame(&s->fs, 2, &mask,    0)) < 0)
+    if ((ret = ff_framesync_get_frame(&s->fs, 0, &base,    0)) < 0 ||
+        (ret = ff_framesync_get_frame(&s->fs, 1, &overlay, 0)) < 0 ||
+        (ret = ff_framesync_get_frame(&s->fs, 2, &mask,    0)) < 0)
         return ret;
 
     if (ctx->is_disabled) {
@@ -199,27 +199,15 @@ static int config_output(AVFilterLink *outlink)
         av_log(ctx, AV_LOG_ERROR, "inputs must be of same pixel format\n");
         return AVERROR(EINVAL);
     }
-    if (base->w                       != overlay->w ||
-        base->h                       != overlay->h ||
-        base->sample_aspect_ratio.num != overlay->sample_aspect_ratio.num ||
-        base->sample_aspect_ratio.den != overlay->sample_aspect_ratio.den ||
-        base->w                       != mask->w ||
-        base->h                       != mask->h ||
-        base->sample_aspect_ratio.num != mask->sample_aspect_ratio.num ||
-        base->sample_aspect_ratio.den != mask->sample_aspect_ratio.den) {
+    if (base->w != overlay->w || base->h != overlay->h ||
+        base->w != mask->w    || base->h != mask->h) {
         av_log(ctx, AV_LOG_ERROR, "First input link %s parameters "
-               "(size %dx%d, SAR %d:%d) do not match the corresponding "
-               "second input link %s parameters (%dx%d, SAR %d:%d) "
-               "and/or third input link %s parameters (%dx%d, SAR %d:%d)\n",
+               "(size %dx%d) do not match the corresponding "
+               "second input link %s parameters (size %dx%d) "
+               "and/or third input link %s parameters (size %dx%d)\n",
                ctx->input_pads[0].name, base->w, base->h,
-               base->sample_aspect_ratio.num,
-               base->sample_aspect_ratio.den,
                ctx->input_pads[1].name, overlay->w, overlay->h,
-               overlay->sample_aspect_ratio.num,
-               overlay->sample_aspect_ratio.den,
-               ctx->input_pads[2].name, mask->w, mask->h,
-               mask->sample_aspect_ratio.num,
-               mask->sample_aspect_ratio.den);
+               ctx->input_pads[2].name, mask->w, mask->h);
         return AVERROR(EINVAL);
     }
 
@@ -232,7 +220,7 @@ static int config_output(AVFilterLink *outlink)
     if ((ret = av_image_fill_linesizes(s->linesize, outlink->format, outlink->w)) < 0)
         return ret;
 
-    if ((ret = ff_framesync2_init(&s->fs, ctx, 3)) < 0)
+    if ((ret = ff_framesync_init(&s->fs, ctx, 3)) < 0)
         return ret;
 
     in = s->fs.in;
@@ -251,20 +239,20 @@ static int config_output(AVFilterLink *outlink)
     s->fs.opaque   = s;
     s->fs.on_event = process_frame;
 
-    return ff_framesync2_configure(&s->fs);
+    return ff_framesync_configure(&s->fs);
 }
 
 static int activate(AVFilterContext *ctx)
 {
     MaskedMergeContext *s = ctx->priv;
-    return ff_framesync2_activate(&s->fs);
+    return ff_framesync_activate(&s->fs);
 }
 
 static av_cold void uninit(AVFilterContext *ctx)
 {
     MaskedMergeContext *s = ctx->priv;
 
-    ff_framesync2_uninit(&s->fs);
+    ff_framesync_uninit(&s->fs);
 }
 
 static const AVFilterPad maskedmerge_inputs[] = {

@@ -61,7 +61,7 @@ void  free(void *ptr);
 
 #include "mem_internal.h"
 
-#define ALIGN (HAVE_AVX ? 32 : 16)
+#define ALIGN (HAVE_AVX512 ? 64 : (HAVE_AVX ? 32 : 16))
 
 /* NOTE: if you want to override these functions with your own
  * implementations (not recommended) you have to link libav* as
@@ -179,6 +179,20 @@ int av_reallocp(void *ptr, size_t size)
 
     memcpy(ptr, &val, sizeof(val));
     return 0;
+}
+
+void *av_malloc_array(size_t nmemb, size_t size)
+{
+    if (!size || nmemb >= INT_MAX / size)
+        return NULL;
+    return av_malloc(nmemb * size);
+}
+
+void *av_mallocz_array(size_t nmemb, size_t size)
+{
+    if (!size || nmemb >= INT_MAX / size)
+        return NULL;
+    return av_mallocz(nmemb * size);
 }
 
 void *av_realloc_array(void *ptr, size_t nmemb, size_t size)

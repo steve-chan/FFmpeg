@@ -25,7 +25,7 @@
 #include "formats.h"
 #include "internal.h"
 #include "video.h"
-#include "framesync2.h"
+#include "framesync.h"
 
 #define OFFSET(x) offsetof(MaskedClampContext, x)
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
@@ -93,9 +93,9 @@ static int process_frame(FFFrameSync *fs)
     AVFrame *out, *base, *dark, *bright;
     int ret;
 
-    if ((ret = ff_framesync2_get_frame(&s->fs, 0, &base,   0)) < 0 ||
-        (ret = ff_framesync2_get_frame(&s->fs, 1, &dark,   0)) < 0 ||
-        (ret = ff_framesync2_get_frame(&s->fs, 2, &bright, 0)) < 0)
+    if ((ret = ff_framesync_get_frame(&s->fs, 0, &base,   0)) < 0 ||
+        (ret = ff_framesync_get_frame(&s->fs, 1, &dark,   0)) < 0 ||
+        (ret = ff_framesync_get_frame(&s->fs, 2, &bright, 0)) < 0)
         return ret;
 
     if (ctx->is_disabled) {
@@ -235,27 +235,15 @@ static int config_output(AVFilterLink *outlink)
         av_log(ctx, AV_LOG_ERROR, "inputs must be of same pixel format\n");
         return AVERROR(EINVAL);
     }
-    if (base->w                       != dark->w ||
-        base->h                       != dark->h ||
-        base->sample_aspect_ratio.num != dark->sample_aspect_ratio.num ||
-        base->sample_aspect_ratio.den != dark->sample_aspect_ratio.den ||
-        base->w                       != bright->w ||
-        base->h                       != bright->h ||
-        base->sample_aspect_ratio.num != bright->sample_aspect_ratio.num ||
-        base->sample_aspect_ratio.den != bright->sample_aspect_ratio.den) {
+    if (base->w != dark->w   || base->h != dark->h ||
+        base->w != bright->w || base->h != bright->h) {
         av_log(ctx, AV_LOG_ERROR, "First input link %s parameters "
-               "(size %dx%d, SAR %d:%d) do not match the corresponding "
-               "second input link %s parameters (%dx%d, SAR %d:%d) "
-               "and/or third input link %s parameters (%dx%d, SAR %d:%d)\n",
+               "(size %dx%d) do not match the corresponding "
+               "second input link %s parameters (%dx%d) "
+               "and/or third input link %s parameters (size %dx%d)\n",
                ctx->input_pads[0].name, base->w, base->h,
-               base->sample_aspect_ratio.num,
-               base->sample_aspect_ratio.den,
                ctx->input_pads[1].name, dark->w, dark->h,
-               dark->sample_aspect_ratio.num,
-               dark->sample_aspect_ratio.den,
-               ctx->input_pads[2].name, bright->w, bright->h,
-               bright->sample_aspect_ratio.num,
-               bright->sample_aspect_ratio.den);
+               ctx->input_pads[2].name, bright->w, bright->h);
         return AVERROR(EINVAL);
     }
 
@@ -265,7 +253,7 @@ static int config_output(AVFilterLink *outlink)
     outlink->sample_aspect_ratio = base->sample_aspect_ratio;
     outlink->frame_rate = base->frame_rate;
 
-    if ((ret = ff_framesync2_init(&s->fs, ctx, 3)) < 0)
+    if ((ret = ff_framesync_init(&s->fs, ctx, 3)) < 0)
         return ret;
 
     in = s->fs.in;
@@ -284,20 +272,20 @@ static int config_output(AVFilterLink *outlink)
     s->fs.opaque   = s;
     s->fs.on_event = process_frame;
 
-    return ff_framesync2_configure(&s->fs);
+    return ff_framesync_configure(&s->fs);
 }
 
 static int activate(AVFilterContext *ctx)
 {
     MaskedClampContext *s = ctx->priv;
-    return ff_framesync2_activate(&s->fs);
+    return ff_framesync_activate(&s->fs);
 }
 
 static av_cold void uninit(AVFilterContext *ctx)
 {
     MaskedClampContext *s = ctx->priv;
 
-    ff_framesync2_uninit(&s->fs);
+    ff_framesync_uninit(&s->fs);
 }
 
 static const AVFilterPad maskedclamp_inputs[] = {

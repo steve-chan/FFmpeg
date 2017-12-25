@@ -121,12 +121,6 @@ struct AVFormatInternal {
     int avoid_negative_ts_use_pts;
 
     /**
-     * Whether or not a header has already been written
-     */
-    int header_written;
-    int write_header_ret;
-
-    /**
      * Timestamp of the end of the shortest stream.
      */
     int64_t shortest_end;
@@ -196,6 +190,8 @@ struct AVStreamInternal {
      * Whether the internal avctx needs to be updated from codecpar (after a late change to codecpar)
      */
     int need_context_update;
+
+    FFFrac *priv_pts;
 };
 
 #ifdef __GNUC__
@@ -545,8 +541,11 @@ static inline int ff_rename(const char *oldpath, const char *newpath, void *logc
     int ret = 0;
     if (rename(oldpath, newpath) == -1) {
         ret = AVERROR(errno);
-        if (logctx)
-            av_log(logctx, AV_LOG_ERROR, "failed to rename file %s to %s\n", oldpath, newpath);
+        if (logctx) {
+            char err[AV_ERROR_MAX_STRING_SIZE] = {0};
+            av_make_error_string(err, AV_ERROR_MAX_STRING_SIZE, ret);
+            av_log(logctx, AV_LOG_ERROR, "failed to rename file %s to %s: %s\n", oldpath, newpath, err);
+        }
     }
     return ret;
 }

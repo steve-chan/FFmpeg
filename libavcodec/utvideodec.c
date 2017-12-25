@@ -126,7 +126,7 @@ static int build_huff(const uint8_t *src, VLC *vlc, int *fsym)
 }
 
 static int decode_plane10(UtvideoContext *c, int plane_no,
-                          uint16_t *dst, int step, ptrdiff_t stride,
+                          uint16_t *dst, ptrdiff_t stride,
                           int width, int height,
                           const uint8_t *src, const uint8_t *huff,
                           int use_pred)
@@ -152,7 +152,7 @@ static int decode_plane10(UtvideoContext *c, int plane_no,
 
             prev = 0x200;
             for (j = sstart; j < send; j++) {
-                for (i = 0; i < width * step; i += step) {
+                for (i = 0; i < width; i++) {
                     pix = fsym;
                     if (use_pred) {
                         prev += pix;
@@ -195,8 +195,7 @@ static int decode_plane10(UtvideoContext *c, int plane_no,
 
         prev = 0x200;
         for (j = sstart; j < send; j++) {
-            int ws = width * step;
-            for (i = 0; i < ws; i += step) {
+            for (i = 0; i < width; i++) {
                 pix = get_vlc2(&gb, vlc.table, VLC_BITS, 3);
                 if (pix < 0) {
                     av_log(c->avctx, AV_LOG_ERROR, "Decoding error\n");
@@ -229,8 +228,18 @@ fail:
     return AVERROR_INVALIDDATA;
 }
 
+static int compute_cmask(int plane_no, int interlaced, enum AVPixelFormat pix_fmt)
+{
+    const int is_luma = (pix_fmt == AV_PIX_FMT_YUV420P) && !plane_no;
+
+    if (interlaced)
+        return ~(1 + 2 * is_luma);
+
+    return ~is_luma;
+}
+
 static int decode_plane(UtvideoContext *c, int plane_no,
-                        uint8_t *dst, int step, ptrdiff_t stride,
+                        uint8_t *dst, ptrdiff_t stride,
                         int width, int height,
                         const uint8_t *src, int use_pred)
 {
@@ -239,7 +248,7 @@ static int decode_plane(UtvideoContext *c, int plane_no,
     VLC vlc;
     GetBitContext gb;
     int prev, fsym;
-    const int cmask = c->interlaced ? ~(1 + 2 * (!plane_no && c->avctx->pix_fmt == AV_PIX_FMT_YUV420P)) : ~(!plane_no && c->avctx->pix_fmt == AV_PIX_FMT_YUV420P);
+    const int cmask = compute_cmask(plane_no, c->interlaced, c->avctx->pix_fmt);
 
     if (build_huff(src, &vlc, &fsym)) {
         av_log(c->avctx, AV_LOG_ERROR, "Cannot build Huffman codes\n");
@@ -256,7 +265,7 @@ static int decode_plane(UtvideoContext *c, int plane_no,
 
             prev = 0x80;
             for (j = sstart; j < send; j++) {
-                for (i = 0; i < width * step; i += step) {
+                for (i = 0; i < width; i++) {
                     pix = fsym;
                     if (use_pred) {
                         prev += pix;
@@ -300,8 +309,7 @@ static int decode_plane(UtvideoContext *c, int plane_no,
 
         prev = 0x80;
         for (j = sstart; j < send; j++) {
-            int ws = width * step;
-            for (i = 0; i < ws; i += step) {
+            for (i = 0; i < width; i++) {
                 pix = get_vlc2(&gb, vlc.table, VLC_BITS, 3);
                 if (pix < 0) {
                     av_log(c->avctx, AV_LOG_ERROR, "Decoding error\n");
@@ -365,12 +373,16 @@ static void restore_median_planar(UtvideoContext *c, uint8_t *src, ptrdiff_t str
         C        = bsrc[-stride];
         bsrc[0] += C;
         A        = bsrc[0];
-        for (i = 1; i < width; i++) {
+        for (i = 1; i < FFMIN(width, 16); i++) { /* scalar loop (DSP need align 16) */
             B        = bsrc[i - stride];
             bsrc[i] += mid_pred(A, B, (uint8_t)(A + B - C));
             C        = B;
             A        = bsrc[i];
         }
+        if (width > 16)
+            c->llviddsp.add_median_pred(bsrc + 16, bsrc - stride + 16,
+                                        bsrc + 16, width - 16, &A, &B);
+
         bsrc += stride;
         // the rest of lines use continuous median prediction
         for (j = 2; j < slice_height; j++) {
@@ -416,12 +428,16 @@ static void restore_median_planar_il(UtvideoContext *c, uint8_t *src, ptrdiff_t 
         C        = bsrc[-stride2];
         bsrc[0] += C;
         A        = bsrc[0];
-        for (i = 1; i < width; i++) {
+        for (i = 1; i < FFMIN(width, 16); i++) { /* scalar loop (DSP need align 16) */
             B        = bsrc[i - stride2];
             bsrc[i] += mid_pred(A, B, (uint8_t)(A + B - C));
             C        = B;
             A        = bsrc[i];
         }
+        if (width > 16)
+            c->llviddsp.add_median_pred(bsrc + 16, bsrc - stride2 + 16,
+                                        bsrc + 16, width - 16, &A, &B);
+
         c->llviddsp.add_median_pred(bsrc + stride, bsrc - stride,
                                         bsrc + stride, width, &A, &B);
         bsrc += stride2;
@@ -444,6 +460,7 @@ static void restore_gradient_planar(UtvideoContext *c, uint8_t *src, ptrdiff_t s
     uint8_t *bsrc;
     int slice_start, slice_height;
     const int cmask = ~rmode;
+    int min_width = FFMIN(width, 32);
 
     for (slice = 0; slice < slices; slice++) {
         slice_start  = ((slice * height) / slices) & cmask;
@@ -463,12 +480,14 @@ static void restore_gradient_planar(UtvideoContext *c, uint8_t *src, ptrdiff_t s
         for (j = 1; j < slice_height; j++) {
             // second line - first element has top prediction, the rest uses gradient
             bsrc[0] = (bsrc[0] + bsrc[-stride]) & 0xFF;
-            for (i = 1; i < width; i++) {
+            for (i = 1; i < min_width; i++) { /* dsp need align 32 */
                 A = bsrc[i - stride];
                 B = bsrc[i - (stride + 1)];
                 C = bsrc[i - 1];
                 bsrc[i] = (A - B + C + bsrc[i]) & 0xFF;
             }
+            if (width > 32)
+                c->llviddsp.add_gradient_pred(bsrc + 32, stride, width - 32);
             bsrc += stride;
         }
     }
@@ -483,6 +502,7 @@ static void restore_gradient_planar_il(UtvideoContext *c, uint8_t *src, ptrdiff_
     int slice_start, slice_height;
     const int cmask   = ~(rmode ? 3 : 1);
     const ptrdiff_t stride2 = stride << 1;
+    int min_width = FFMIN(width, 32);
 
     for (slice = 0; slice < slices; slice++) {
         slice_start    = ((slice * height) / slices) & cmask;
@@ -504,12 +524,15 @@ static void restore_gradient_planar_il(UtvideoContext *c, uint8_t *src, ptrdiff_
         for (j = 1; j < slice_height; j++) {
             // second line - first element has top prediction, the rest uses gradient
             bsrc[0] = (bsrc[0] + bsrc[-stride2]) & 0xFF;
-            for (i = 1; i < width; i++) {
+            for (i = 1; i < min_width; i++) { /* dsp need align 32 */
                 A = bsrc[i - stride2];
                 B = bsrc[i - (stride2 + 1)];
                 C = bsrc[i - 1];
                 bsrc[i] = (A - B + C + bsrc[i]) & 0xFF;
             }
+            if (width > 32)
+                c->llviddsp.add_gradient_pred(bsrc + 32, stride2, width - 32);
+
             A = bsrc[-stride];
             B = bsrc[-(1 + stride + stride - width)];
             C = bsrc[width - 1];
@@ -624,7 +647,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     case AV_PIX_FMT_GBRP:
     case AV_PIX_FMT_GBRAP:
         for (i = 0; i < c->planes; i++) {
-            ret = decode_plane(c, i, frame.f->data[i], 1,
+            ret = decode_plane(c, i, frame.f->data[i],
                                frame.f->linesize[i], avctx->width,
                                avctx->height, plane_start[i],
                                c->frame_pred == PRED_LEFT);
@@ -661,7 +684,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
     case AV_PIX_FMT_GBRAP10:
     case AV_PIX_FMT_GBRP10:
         for (i = 0; i < c->planes; i++) {
-            ret = decode_plane10(c, i, (uint16_t *)frame.f->data[i], 1,
+            ret = decode_plane10(c, i, (uint16_t *)frame.f->data[i],
                                  frame.f->linesize[i] / 2, avctx->width,
                                  avctx->height, plane_start[i],
                                  plane_start[i + 1] - 1024,
@@ -675,7 +698,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         break;
     case AV_PIX_FMT_YUV420P:
         for (i = 0; i < 3; i++) {
-            ret = decode_plane(c, i, frame.f->data[i], 1, frame.f->linesize[i],
+            ret = decode_plane(c, i, frame.f->data[i], frame.f->linesize[i],
                                avctx->width >> !!i, avctx->height >> !!i,
                                plane_start[i], c->frame_pred == PRED_LEFT);
             if (ret)
@@ -707,7 +730,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         break;
     case AV_PIX_FMT_YUV422P:
         for (i = 0; i < 3; i++) {
-            ret = decode_plane(c, i, frame.f->data[i], 1, frame.f->linesize[i],
+            ret = decode_plane(c, i, frame.f->data[i], frame.f->linesize[i],
                                avctx->width >> !!i, avctx->height,
                                plane_start[i], c->frame_pred == PRED_LEFT);
             if (ret)
@@ -737,7 +760,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         break;
     case AV_PIX_FMT_YUV444P:
         for (i = 0; i < 3; i++) {
-            ret = decode_plane(c, i, frame.f->data[i], 1, frame.f->linesize[i],
+            ret = decode_plane(c, i, frame.f->data[i], frame.f->linesize[i],
                                avctx->width, avctx->height,
                                plane_start[i], c->frame_pred == PRED_LEFT);
             if (ret)
@@ -767,7 +790,7 @@ static int decode_frame(AVCodecContext *avctx, void *data, int *got_frame,
         break;
     case AV_PIX_FMT_YUV422P10:
         for (i = 0; i < 3; i++) {
-            ret = decode_plane10(c, i, (uint16_t *)frame.f->data[i], 1, frame.f->linesize[i] / 2,
+            ret = decode_plane10(c, i, (uint16_t *)frame.f->data[i], frame.f->linesize[i] / 2,
                                  avctx->width >> !!i, avctx->height,
                                  plane_start[i], plane_start[i + 1] - 1024, c->frame_pred == PRED_LEFT);
             if (ret)

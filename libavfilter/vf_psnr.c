@@ -31,7 +31,7 @@
 #include "avfilter.h"
 #include "drawutils.h"
 #include "formats.h"
-#include "framesync2.h"
+#include "framesync.h"
 #include "internal.h"
 #include "psnr.h"
 #include "video.h"
@@ -146,21 +146,21 @@ static int do_psnr(FFFrameSync *fs)
 {
     AVFilterContext *ctx = fs->parent;
     PSNRContext *s = ctx->priv;
-    AVFrame *main, *ref;
+    AVFrame *master, *ref;
     double comp_mse[4], mse = 0;
     int ret, j, c;
     AVDictionary **metadata;
 
-    ret = ff_framesync2_dualinput_get(fs, &main, &ref);
+    ret = ff_framesync_dualinput_get(fs, &master, &ref);
     if (ret < 0)
         return ret;
     if (!ref)
-        return ff_filter_frame(ctx->outputs[0], main);
-    metadata = &main->metadata;
+        return ff_filter_frame(ctx->outputs[0], master);
+    metadata = &master->metadata;
 
-    compute_images_mse(s, (const uint8_t **)main->data, main->linesize,
+    compute_images_mse(s, (const uint8_t **)master->data, master->linesize,
                           (const uint8_t **)ref->data, ref->linesize,
-                          main->width, main->height, comp_mse);
+                          master->width, master->height, comp_mse);
 
     for (j = 0; j < s->nb_components; j++)
         mse += comp_mse[j] * s->planeweight[j];
@@ -222,7 +222,7 @@ static int do_psnr(FFFrameSync *fs)
         fprintf(s->stats_file, "\n");
     }
 
-    return ff_filter_frame(ctx->outputs[0], main);
+    return ff_filter_frame(ctx->outputs[0], master);
 }
 
 static av_cold int init(AVFilterContext *ctx)
@@ -270,7 +270,7 @@ static int query_formats(AVFilterContext *ctx)
         AV_PIX_FMT_YUVJ440P, AV_PIX_FMT_YUVJ444P,
         AV_PIX_FMT_GBRP, AV_PIX_FMT_GBRP9, AV_PIX_FMT_GBRP10,
         AV_PIX_FMT_GBRP12, AV_PIX_FMT_GBRP14, AV_PIX_FMT_GBRP16,
-        AV_PIX_FMT_GBRAP, AV_PIX_FMT_GBRAP16,
+        AV_PIX_FMT_GBRAP, AV_PIX_FMT_GBRAP10, AV_PIX_FMT_GBRAP12, AV_PIX_FMT_GBRAP16,
         AV_PIX_FMT_NONE
     };
 
@@ -339,7 +339,7 @@ static int config_output(AVFilterLink *outlink)
     AVFilterLink *mainlink = ctx->inputs[0];
     int ret;
 
-    ret = ff_framesync2_init_dualinput(&s->fs, ctx);
+    ret = ff_framesync_init_dualinput(&s->fs, ctx);
     if (ret < 0)
         return ret;
     outlink->w = mainlink->w;
@@ -347,7 +347,7 @@ static int config_output(AVFilterLink *outlink)
     outlink->time_base = mainlink->time_base;
     outlink->sample_aspect_ratio = mainlink->sample_aspect_ratio;
     outlink->frame_rate = mainlink->frame_rate;
-    if ((ret = ff_framesync2_configure(&s->fs)) < 0)
+    if ((ret = ff_framesync_configure(&s->fs)) < 0)
         return ret;
 
     return 0;
@@ -356,7 +356,7 @@ static int config_output(AVFilterLink *outlink)
 static int activate(AVFilterContext *ctx)
 {
     PSNRContext *s = ctx->priv;
-    return ff_framesync2_activate(&s->fs);
+    return ff_framesync_activate(&s->fs);
 }
 
 static av_cold void uninit(AVFilterContext *ctx)
@@ -380,7 +380,7 @@ static av_cold void uninit(AVFilterContext *ctx)
                get_psnr(s->min_mse, 1, s->average_max));
     }
 
-    ff_framesync2_uninit(&s->fs);
+    ff_framesync_uninit(&s->fs);
 
     if (s->stats_file && s->stats_file != stdout)
         fclose(s->stats_file);

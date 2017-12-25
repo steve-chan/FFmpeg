@@ -24,7 +24,7 @@
 #include "avfilter.h"
 #include "filters.h"
 #include "formats.h"
-#include "framesync2.h"
+#include "framesync.h"
 #include "internal.h"
 #include "video.h"
 
@@ -503,8 +503,8 @@ static int process_frame(FFFrameSync *fs)
     AVFrame *out = NULL, *base, *alpha;
     int ret;
 
-    if ((ret = ff_framesync2_get_frame(&s->fs, 0, &base,  0)) < 0 ||
-        (ret = ff_framesync2_get_frame(&s->fs, 1, &alpha, 0)) < 0)
+    if ((ret = ff_framesync_get_frame(&s->fs, 0, &base,  0)) < 0 ||
+        (ret = ff_framesync_get_frame(&s->fs, 1, &alpha, 0)) < 0)
         return ret;
 
     if ((ret = filter_frame(ctx, &out, base, alpha)) < 0)
@@ -578,7 +578,7 @@ static int config_output(AVFilterLink *outlink)
     if (s->inplace)
         return 0;
 
-    if ((ret = ff_framesync2_init(&s->fs, ctx, 2)) < 0)
+    if ((ret = ff_framesync_init(&s->fs, ctx, 2)) < 0)
         return ret;
 
     in = s->fs.in;
@@ -593,7 +593,7 @@ static int config_output(AVFilterLink *outlink)
     s->fs.opaque   = s;
     s->fs.on_event = process_frame;
 
-    return ff_framesync2_configure(&s->fs);
+    return ff_framesync_configure(&s->fs);
 }
 
 static int activate(AVFilterContext *ctx)
@@ -607,9 +607,10 @@ static int activate(AVFilterContext *ctx)
         int64_t pts;
 
         if ((ret = ff_inlink_consume_frame(ctx->inputs[0], &frame)) > 0) {
-            if ((ret = filter_frame(ctx, &out, frame, frame)) < 0)
-                return ret;
+            ret = filter_frame(ctx, &out, frame, frame);
             av_frame_free(&frame);
+            if (ret < 0)
+                return ret;
             ret = ff_filter_frame(ctx->outputs[0], out);
         }
         if (ret < 0) {
@@ -623,7 +624,7 @@ static int activate(AVFilterContext *ctx)
             return 0;
         }
     } else {
-        return ff_framesync2_activate(&s->fs);
+        return ff_framesync_activate(&s->fs);
     }
 }
 
@@ -668,7 +669,7 @@ static av_cold void uninit(AVFilterContext *ctx)
     PreMultiplyContext *s = ctx->priv;
 
     if (!s->inplace)
-        ff_framesync2_uninit(&s->fs);
+        ff_framesync_uninit(&s->fs);
 }
 
 static const AVFilterPad premultiply_outputs[] = {

@@ -1,6 +1,7 @@
 /avfft
 /avpacket
 /cabac
+/celp_math
 /dct
 /fft
 /fft-fixed
@@ -13,6 +14,7 @@
 /mathops
 /mjpegenc_huffman
 /motion
+/mpeg12framerate
 /options
 /rangecoder
 /snowenc
