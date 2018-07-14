@@ -25,10 +25,6 @@
 #include <stdio.h>
 #include <signal.h>
 
-#if HAVE_PTHREADS
-#include <pthread.h>
-#endif
-
 #include "cmdutils.h"
 
 #include "libavformat/avformat.h"
@@ -45,6 +41,7 @@
 #include "libavutil/hwcontext.h"
 #include "libavutil/pixfmt.h"
 #include "libavutil/rational.h"
+#include "libavutil/thread.h"
 #include "libavutil/threadmessage.h"
 
 #include "libswresample/swresample.h"
@@ -415,7 +412,7 @@ typedef struct InputFile {
     int rate_emu;
     int accurate_seek;
 
-#if HAVE_PTHREADS
+#if HAVE_THREADS
     AVThreadMessageQueue *in_thread_queue;
     pthread_t thread;           /* thread reading from this file */
     int non_blocking;           /* reading packets from the thread should not block */
@@ -487,6 +484,7 @@ typedef struct OutputStream {
     AVRational frame_aspect_ratio;
 
     /* forced key frames */
+    int64_t forced_kf_ref_pts;
     int64_t *forced_kf_pts;
     int forced_kf_count;
     int forced_kf_index;
@@ -528,9 +526,6 @@ typedef struct OutputStream {
     char *disposition;
 
     int keep_pix_fmt;
-
-    AVCodecParserContext *parser;
-    AVCodecContext       *parser_avctx;
 
     /* stats */
     // combined size of all the packets written

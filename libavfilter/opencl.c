@@ -19,11 +19,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "libavutil/hwcontext.h"
-#include "libavutil/hwcontext_opencl.h"
 #include "libavutil/mem.h"
+#include "libavutil/pixdesc.h"
 
-#include "avfilter.h"
 #include "formats.h"
 #include "opencl.h"
 
@@ -42,11 +40,29 @@ int ff_opencl_filter_query_formats(AVFilterContext *avctx)
     return ff_set_common_formats(avctx, formats);
 }
 
+static int opencl_filter_set_device(AVFilterContext *avctx,
+                                    AVBufferRef *device)
+{
+    OpenCLFilterContext *ctx = avctx->priv;
+
+    av_buffer_unref(&ctx->device_ref);
+
+    ctx->device_ref = av_buffer_ref(device);
+    if (!ctx->device_ref)
+        return AVERROR(ENOMEM);
+
+    ctx->device = (AVHWDeviceContext*)ctx->device_ref->data;
+    ctx->hwctx  = ctx->device->hwctx;
+
+    return 0;
+}
+
 int ff_opencl_filter_config_input(AVFilterLink *inlink)
 {
     AVFilterContext   *avctx = inlink->dst;
     OpenCLFilterContext *ctx = avctx->priv;
     AVHWFramesContext *input_frames;
+    int err;
 
     if (!inlink->hw_frames_ctx) {
         av_log(avctx, AV_LOG_ERROR, "OpenCL filtering requires a "
@@ -59,15 +75,12 @@ int ff_opencl_filter_config_input(AVFilterLink *inlink)
         return 0;
 
     input_frames = (AVHWFramesContext*)inlink->hw_frames_ctx->data;
-
     if (input_frames->format != AV_PIX_FMT_OPENCL)
         return AVERROR(EINVAL);
 
-    ctx->device_ref = av_buffer_ref(input_frames->device_ref);
-    if (!ctx->device_ref)
-        return AVERROR(ENOMEM);
-    ctx->device = input_frames->device_ctx;
-    ctx->hwctx  = ctx->device->hwctx;
+    err = opencl_filter_set_device(avctx, input_frames->device_ref);
+    if (err < 0)
+        return err;
 
     // Default output parameters match input parameters.
     if (ctx->output_format == AV_PIX_FMT_NONE)
@@ -89,6 +102,18 @@ int ff_opencl_filter_config_output(AVFilterLink *outlink)
     int err;
 
     av_buffer_unref(&outlink->hw_frames_ctx);
+
+    if (!ctx->device_ref) {
+        if (!avctx->hw_device_ctx) {
+            av_log(avctx, AV_LOG_ERROR, "OpenCL filtering requires an "
+                   "OpenCL device.\n");
+            return AVERROR(EINVAL);
+        }
+
+        err = opencl_filter_set_device(avctx, avctx->hw_device_ctx);
+        if (err < 0)
+            return err;
+    }
 
     output_frames_ref = av_hwframe_ctx_alloc(ctx->device_ref);
     if (!output_frames_ref) {
@@ -248,4 +273,67 @@ fail:
     fclose(file);
     av_freep(&src);
     return err;
+}
+
+int ff_opencl_filter_work_size_from_image(AVFilterContext *avctx,
+                                          size_t *work_size,
+                                          AVFrame *frame, int plane,
+                                          int block_alignment)
+{
+    cl_mem image;
+    cl_mem_object_type type;
+    size_t width, height;
+    cl_int cle;
+
+    if (frame->format != AV_PIX_FMT_OPENCL) {
+        av_log(avctx, AV_LOG_ERROR, "Invalid frame format %s, "
+               "opencl required.\n", av_get_pix_fmt_name(frame->format));
+        return AVERROR(EINVAL);
+    }
+
+    image = (cl_mem)frame->data[plane];
+    if (!image) {
+        av_log(avctx, AV_LOG_ERROR, "Plane %d required but not set.\n",
+               plane);
+        return AVERROR(EINVAL);
+    }
+
+    cle = clGetMemObjectInfo(image, CL_MEM_TYPE, sizeof(type),
+                             &type, NULL);
+    if (cle != CL_SUCCESS) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to query object type of "
+               "plane %d: %d.\n", plane, cle);
+        return AVERROR_UNKNOWN;
+    }
+    if (type != CL_MEM_OBJECT_IMAGE2D) {
+        av_log(avctx, AV_LOG_ERROR, "Plane %d is not a 2D image.\n",
+               plane);
+        return AVERROR(EINVAL);
+    }
+
+    cle = clGetImageInfo(image, CL_IMAGE_WIDTH,  sizeof(size_t),
+                         &width, NULL);
+    if (cle != CL_SUCCESS) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to query plane %d width: %d.\n",
+               plane, cle);
+        return AVERROR_UNKNOWN;
+    }
+
+    cle = clGetImageInfo(image, CL_IMAGE_HEIGHT, sizeof(size_t),
+                         &height, NULL);
+    if (cle != CL_SUCCESS) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to query plane %d height: %d.\n",
+               plane, cle);
+        return AVERROR_UNKNOWN;
+    }
+
+    if (block_alignment) {
+        width  = FFALIGN(width,  block_alignment);
+        height = FFALIGN(height, block_alignment);
+    }
+
+    work_size[0] = width;
+    work_size[1] = height;
+
+    return 0;
 }

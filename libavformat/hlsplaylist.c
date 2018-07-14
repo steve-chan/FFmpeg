@@ -35,8 +35,20 @@ void ff_hls_write_playlist_version(AVIOContext *out, int version) {
     avio_printf(out, "#EXT-X-VERSION:%d\n", version);
 }
 
+void ff_hls_write_audio_rendition(AVIOContext *out, char *agroup,
+                                  char *filename, int name_id, int is_default) {
+    if (!out || !agroup || !filename)
+        return;
+
+    avio_printf(out, "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"group_%s\"", agroup);
+    avio_printf(out, ",NAME=\"audio_%d\",DEFAULT=%s,URI=\"%s\"\n", name_id,
+                     is_default ? "YES" : "NO", filename);
+}
+
 void ff_hls_write_stream_info(AVStream *st, AVIOContext *out,
-                              int bandwidth, char *filename, char *agroup) {
+                              int bandwidth, char *filename, char *agroup,
+                              char *codecs, char *ccgroup) {
+
     if (!out || !filename)
         return;
 
@@ -50,8 +62,12 @@ void ff_hls_write_stream_info(AVStream *st, AVIOContext *out,
     if (st && st->codecpar->width > 0 && st->codecpar->height > 0)
         avio_printf(out, ",RESOLUTION=%dx%d", st->codecpar->width,
                 st->codecpar->height);
+    if (codecs && strlen(codecs) > 0)
+        avio_printf(out, ",CODECS=\"%s\"", codecs);
     if (agroup && strlen(agroup) > 0)
         avio_printf(out, ",AUDIO=\"group_%s\"", agroup);
+    if (ccgroup && strlen(ccgroup) > 0)
+        avio_printf(out, ",CLOSED-CAPTIONS=\"%s\"", ccgroup);
     avio_printf(out, "\n%s\n\n", filename);
 }
 
